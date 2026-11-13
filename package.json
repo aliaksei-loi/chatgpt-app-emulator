@@ -1,0 +1,45 @@
+{
+  "name": "chatgpt-app-emulator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local emulator of the ChatGPT host for MCP apps with UI",
+  "scripts": {
+    "dev": "tsx src/server/index.ts",
+    "fixture:dice": "tsx fixtures/dice/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.116",
+    "@ai-sdk/react": "^4.0.175",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@hono/node-server": "^2.1.8",
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ai": "^7.0.171",
+    "eve": "1.0.0-rc.11",
+    "glimm": "^0.4.1",
+    "hono": "^4.13.18",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "esbuild": "^0.28.2",
+    "shadow-plugin": "^2.1.1",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}

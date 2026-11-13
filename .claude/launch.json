@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "fixture-mcp", "runtimeExecutable": "pnpm", "runtimeArgs": ["fixture:dice"], "port": 8787 },
+    { "name": "emulator", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev"], "port": 4310 }
+  ]
+}

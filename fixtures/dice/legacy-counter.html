@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Legacy counter</title>
+    <style>
+      body { font-family: system-ui; margin: 0; padding: 12px; }
+      body.dark { background: #212121; color: #ececec; }
+      #count { font-size: 28px; }
+      #meta { font-size: 12px; opacity: 0.7; margin: 6px 0 10px; }
+      button { margin-right: 6px; }
+    </style>
+  </head>
+  <body>
+    <div id="count"></div>
+    <div id="meta"></div>
+    <button id="inc">+1</button>
+    <button id="roll">Roll via callTool</button>
+    <button id="ask">Send follow-up</button>
+    <button id="full">Toggle fullscreen</button>
+    <script>
+      const openai = window.openai
+      const byId = (id) => document.getElementById(id)
+      let state = openai.widgetState ?? { count: openai.toolOutput?.count ?? 0 }
+
+      const render = () => {
+        byId('count').textContent = 'Count: ' + state.count
+        byId('meta').textContent =
+          'theme=' + openai.theme + ' mode=' + openai.displayMode + ' locale=' + openai.locale +
+          ' meta=' + JSON.stringify(openai.toolResponseMetadata)
+        document.body.className = openai.theme === 'dark' ? 'dark' : ''
+      }
+      const update = (count) => {
+        state = { count }
+        openai.setWidgetState(state)
+        render()
+      }
+
+      byId('inc').onclick = () => update(state.count + 1)
+      byId('roll').onclick = async () => {
+        const result = await openai.callTool('roll_dice', { sides: 6 })
+        update(result.structuredContent.value)
+      }
+      byId('ask').onclick = () =>
+        openai.sendFollowUpMessage({ prompt: 'The counter is at ' + state.count + '. What should I do next?' })
+      byId('full').onclick = () =>
+        openai.requestDisplayMode({ mode: openai.displayMode === 'fullscreen' ? 'inline' : 'fullscreen' })
+      window.addEventListener('openai:set_globals', render)
+      render()
+    </script>
+  </body>
+</html>
