@@ -36,6 +36,7 @@
     requestCheckout: unsupported('requestCheckout'),
   }
   window.openai = api
+  window.webplus = api
 
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent) return
@@ -61,12 +62,23 @@
   })
   window.addEventListener('error', (event) => notify('widgetError', { message: event.message }))
   window.addEventListener('DOMContentLoaded', () => {
+    let scheduled = false
     const report = () => {
-      const body = document.body
-      const bottom = body.getBoundingClientRect().bottom + window.scrollY + parseFloat(getComputedStyle(body).marginBottom)
-      notify('contentHeight', { height: Math.ceil(bottom) })
+      if (scheduled) return
+      scheduled = true
+      requestAnimationFrame(() => {
+        scheduled = false
+        const root = document.documentElement
+        const previous = root.style.height
+        root.style.height = 'fit-content'
+        const height = Math.ceil(root.getBoundingClientRect().height)
+        root.style.height = previous
+        notify('contentHeight', { height })
+      })
     }
-    new ResizeObserver(report).observe(document.body)
+    const observer = new ResizeObserver(report)
+    observer.observe(document.documentElement)
+    observer.observe(document.body)
     report()
   })
 })()

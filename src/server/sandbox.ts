@@ -1,15 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { Hono } from 'hono'
 import { config } from './config.js'
-import { getCall, readWidget } from './mcp.js'
+import { getCall, getWidgetState, readWidget } from './mcp.js'
 
 const shim = readFileSync(new URL('../shim/openai-shim.js', import.meta.url), 'utf8')
 
 type DeclaredCsp = { connect: string[]; resource: string[]; frame: string[] }
 
-function declaredCsp(meta: Record<string, unknown>): DeclaredCsp {
+function declaredCsp(meta: Record<string, unknown>): DeclaredCsp | undefined {
   const standard = (meta.ui as { csp?: Record<string, string[]> } | undefined)?.csp
   const legacy = meta['openai/widgetCSP'] as Record<string, string[]> | undefined
+  if (!standard && !legacy) return undefined
   return {
     connect: standard?.connectDomains ?? legacy?.connect_domains ?? [],
     resource: standard?.resourceDomains ?? legacy?.resource_domains ?? [],
@@ -18,17 +19,19 @@ function declaredCsp(meta: Record<string, unknown>): DeclaredCsp {
 }
 
 const isWildcard = (origin: string) => origin.includes('*')
+const HOST_CDN = 'https://cdn.openai.com'
 
-function cspHeader(declared: DeclaredCsp) {
+function cspHeader(declared: DeclaredCsp | undefined) {
+  if (!declared) return `frame-ancestors ${config.uiOrigin}`
   const connect = declared.connect.filter((origin) => !isWildcard(origin)).join(' ')
   const resource = declared.resource.filter((origin) => !isWildcard(origin)).join(' ')
   const frame = declared.frame.filter((origin) => !isWildcard(origin))
   return [
     "default-src 'none'",
     `script-src 'self' 'unsafe-inline' blob: ${resource}`,
-    `style-src 'self' 'unsafe-inline' ${resource}`,
-    `img-src 'self' data: blob: ${resource}`,
-    `font-src 'self' data: ${resource}`,
+    `style-src 'self' 'unsafe-inline' ${HOST_CDN} ${resource}`,
+    `img-src 'self' data: blob: ${HOST_CDN} ${resource}`,
+    `font-src 'self' data: ${HOST_CDN} ${resource}`,
     `media-src 'self' data: blob: ${resource}`,
     `connect-src 'self' ${connect}`,
     `frame-src ${frame.length ? frame.join(' ') : "'none'"}`,
@@ -50,20 +53,25 @@ function inject(html: string, boot: unknown) {
 
 export const sandbox = new Hono()
 
-sandbox.get('/widget/:callId', async (c) => {
-  const record = getCall(c.req.param('callId'))
+sandbox.use('*', async (c, next) => {
+  if (c.req.header('host') !== new URL(config.sandboxOrigin).host) return c.text('Forbidden', 403)
+  await next()
+})
+
+sandbox.get('/', async (c) => {
+  const record = getCall(c.req.query('call') ?? '')
   if (!record?.resourceUri) return c.text('Unknown widget call', 404)
   const widget = await readWidget(record.resourceUri)
   const declared = declaredCsp(widget.meta)
   const displayMode = c.req.query('displayMode') ?? 'inline'
   const boot = {
     callId: record.id,
-    droppedCspOrigins: [...declared.connect, ...declared.resource, ...declared.frame].filter(isWildcard),
+    droppedCspOrigins: declared ? [...declared.connect, ...declared.resource, ...declared.frame].filter(isWildcard) : [],
     globals: {
       toolInput: record.input ?? {},
-      toolOutput: record.result.structuredContent ?? null,
-      toolResponseMetadata: record.result._meta ?? null,
-      widgetState: record.widgetState ?? null,
+      toolOutput: record.result?.structuredContent ?? null,
+      toolResponseMetadata: record.result?._meta ?? null,
+      widgetState: getWidgetState(record) ?? null,
       theme: c.req.query('theme') ?? 'light',
       displayMode,
       locale: c.req.query('locale') ?? config.locale,

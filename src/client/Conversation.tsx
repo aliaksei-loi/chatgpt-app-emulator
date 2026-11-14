@@ -5,12 +5,14 @@ import type { AppTool, EmulatorState, ToolResult } from './api'
 import LoadingState from './beautifui/LoadingState'
 import ToolChips, { type ToolStep } from './beautifui/ToolChips'
 import { defaultArgs } from './lib'
-import { WidgetFrame, type WidgetLog } from './WidgetFrame'
+import { WidgetFrame, type DisplayMode, type ModelContext, type WidgetLog } from './WidgetFrame'
 
 type Shared = {
   state: EmulatorState
   theme: 'light' | 'dark'
   onFollowUp: (text: string) => void
+  onModelContext: (context: ModelContext) => void
+  onDisplayMode: (callId: string, mode: DisplayMode) => void
   onLog: (entry: WidgetLog) => void
 }
 
@@ -55,7 +57,9 @@ function toStep(call: DynamicToolUIPart, tool: AppTool | undefined): ToolStep {
   }
 }
 
-function ToolRun({ calls, state, theme, onFollowUp, onLog }: { calls: DynamicToolUIPart[] } & Shared) {
+const MCP_APP_MIME = 'text/html;profile=mcp-app'
+
+function ToolRun({ calls, state, theme, onFollowUp, onModelContext, onDisplayMode, onLog }: { calls: DynamicToolUIPart[] } & Shared) {
   const toolOf = (call: DynamicToolUIPart) => state.tools.find((tool) => tool.name === call.toolName)
   return (
     <div className="flex flex-col gap-3">
@@ -67,19 +71,26 @@ function ToolRun({ calls, state, theme, onFollowUp, onLog }: { calls: DynamicToo
       />
       {calls.map((call) => {
         const tool = toolOf(call)
-        if (call.state !== 'output-available' || !tool?.resourceUri) return null
+        if (!tool?.resourceUri || call.state === 'output-error') return null
+        const done = call.state === 'output-available'
+        const mountsBeforeResult = state.widgets[tool.resourceUri]?.mimeType === MCP_APP_MIME
+        if (!done && !mountsBeforeResult) return null
         return (
           <WidgetFrame
             key={call.toolCallId}
             callId={call.toolCallId}
+            appName={state.serverInfo?.name ?? 'App'}
             tool={tool}
             input={call.input}
-            result={call.output as ToolResult}
+            inputComplete={call.state !== 'input-streaming'}
+            result={done ? (call.output as ToolResult) : undefined}
             widget={state.widgets[tool.resourceUri]}
             sandboxOrigin={state.sandboxOrigin}
             theme={theme}
             locale={state.locale}
             onFollowUp={onFollowUp}
+            onModelContext={onModelContext}
+            onDisplayMode={onDisplayMode}
             onLog={onLog}
           />
         )
@@ -112,13 +123,49 @@ function Message({ message, ...shared }: { message: UIMessage } & Shared) {
   )
 }
 
-function Welcome({ state, onRunTool }: { state: EmulatorState; onRunTool: (tool: AppTool, args: unknown) => void }) {
+function Welcome({
+  state,
+  onRunTool,
+  onPrompt,
+}: {
+  state: EmulatorState
+  onRunTool: (tool: AppTool, args: unknown) => void
+  onPrompt: (text: string) => void
+}) {
+  const { active, list } = state.examples
+  const example = list.find((item) => item.id === active.id)
+
+  if (example && (active.status === 'preparing' || active.status === 'starting')) {
+    return (
+      <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
+        <LoadingState label={`${active.status === 'preparing' ? 'Preparing' : 'Starting'} ${example.title}`} />
+        {active.status === 'preparing' && (
+          <p className="max-w-sm text-ink-2">The first run downloads and builds the examples. That takes about a minute.</p>
+        )}
+      </div>
+    )
+  }
+  if (example && active.status === 'failed') {
+    return (
+      <div className="flex flex-col items-center gap-2 pt-[16vh] text-center">
+        <h1 className="text-[19px] font-semibold tracking-[-0.02em] text-ink">{example.title} did not start</h1>
+        <p role="alert" className="max-w-lg font-mono text-[12px] leading-[1.5] whitespace-pre-wrap text-red">
+          {active.message}
+        </p>
+      </div>
+    )
+  }
   if (!state.connected) {
     return (
       <div className="flex flex-col items-center gap-2 pt-[16vh] text-center">
         <h1 className="text-[19px] font-semibold tracking-[-0.02em] text-ink">Can't reach the MCP server</h1>
         <p className="font-mono text-[12px] text-ink-3">{state.serverUrl}</p>
-        <p className="max-w-sm text-ink-2">Start it and this page reconnects on its own.</p>
+        {state.error && (
+          <p role="alert" className="max-w-lg font-mono text-[12px] leading-[1.5] text-red">
+            {state.error}
+          </p>
+        )}
+        <p className="max-w-sm text-ink-2">Start it and this page reconnects on its own, or pick one from Examples.</p>
       </div>
     )
   }
@@ -126,6 +173,20 @@ function Welcome({ state, onRunTool }: { state: EmulatorState; onRunTool: (tool:
     <div className="flex flex-col items-center gap-2 pt-[16vh] text-center">
       <h1 className="text-[19px] font-semibold tracking-[-0.02em] text-ink">{state.serverInfo?.name ?? 'Your app'} is connected</h1>
       <p className="max-w-sm text-ink-2">Ask for something the app can do, or run a tool yourself.</p>
+      {example && active.status === 'running' && (
+        <div className="mt-3 flex max-w-lg flex-col items-center gap-1.5">
+          {example.prompts.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => onPrompt(prompt)}
+              className="inline-flex min-h-8 cursor-pointer items-center rounded-full bg-surface px-3.5 py-1 text-[13px] text-ink shadow-btn transition-colors duration-100 hover:bg-hover"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mt-3 flex max-w-md flex-wrap justify-center gap-1.5">
         {state.tools.map((tool) => (
           <button
@@ -147,12 +208,14 @@ export function Conversation({
   status,
   error,
   onRunTool,
+  onPrompt,
   ...shared
 }: {
   messages: UIMessage[]
   status: ChatStatus
   error: Error | undefined
   onRunTool: (tool: AppTool, args: unknown) => void
+  onPrompt: (text: string) => void
 } & Shared) {
   const tail = messages.at(-1)?.role === 'assistant' ? messages.at(-1)?.parts.at(-1) : undefined
   const waiting = status === 'submitted' || (status === 'streaming' && tail?.type !== 'text')
@@ -165,8 +228,8 @@ export function Conversation({
     : 'Thinking'
 
   return (
-    <div className="mx-auto flex max-w-[720px] flex-col gap-5 px-5 py-6">
-      {messages.length === 0 && <Welcome state={shared.state} onRunTool={onRunTool} />}
+    <div className="mx-auto flex max-w-[768px] flex-col gap-5 px-6 py-6">
+      {messages.length === 0 && <Welcome state={shared.state} onRunTool={onRunTool} onPrompt={onPrompt} />}
       {messages.map((message) => (
         <Message key={message.id} message={message} {...shared} />
       ))}

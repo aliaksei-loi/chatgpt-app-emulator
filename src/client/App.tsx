@@ -1,13 +1,14 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type DynamicToolUIPart, type UIMessage } from 'ai'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { callTool, fetchState, type AppTool, type EmulatorState, type LogEntry } from './api'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { callTool, connectServer, fetchState, startExample, type AppTool, type EmulatorState, type LogEntry } from './api'
 import PromptBar from './beautifui/PromptBar'
 import { Conversation } from './Conversation'
+import { ExamplesMenu } from './ExamplesMenu'
 import { Glyph, IconButton } from './Glyph'
 import { Inspector } from './Inspector'
 import { parseToolCommand } from './lib'
-import type { WidgetLog } from './WidgetFrame'
+import type { DisplayMode, ModelContext, WidgetLog } from './WidgetFrame'
 
 type Theme = 'light' | 'dark'
 
@@ -24,20 +25,60 @@ function restoreChat(): UIMessage[] {
 }
 const WIDE_ENOUGH_FOR_INSPECTOR = 1000
 
+function ServerUrl({ url, onChange }: { url: string; onChange: (next: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        title="Connect to another MCP server"
+        onClick={() => setDraft(url)}
+        className="min-w-0 cursor-pointer truncate rounded-chip px-1 py-0.5 font-mono text-[11.5px] text-ink-3 transition-colors duration-100 hover:bg-hover hover:text-ink-2"
+      >
+        {url}
+      </button>
+    )
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    if (draft && draft.trim() !== url) onChange(draft.trim())
+    setDraft(null)
+  }
+
+  return (
+    <form className="min-w-0 flex-1" onSubmit={submit}>
+      <input
+        autoFocus
+        aria-label="MCP server URL"
+        value={draft}
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(event) => event.key === 'Escape' && setDraft(null)}
+        className="w-full rounded-chip bg-field px-1.5 py-0.5 font-mono text-[11.5px] text-ink shadow-inset-field outline-none"
+      />
+    </form>
+  )
+}
+
 export function App() {
   const [state, setState] = useState<EmulatorState | null>(null)
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'))
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= WIDE_ENOUGH_FOR_INSPECTOR)
   const [log, setLog] = useState<LogEntry[]>([])
   const [notice, setNotice] = useState('')
+  const [fullscreenCall, setFullscreenCall] = useState<string | null>(null)
   const [chosenModel, setChosenModel] = useState(() => localStorage.getItem(MODEL_KEY) ?? '')
   const logId = useRef(0)
   const serialized = useRef('')
   const scroller = useRef<HTMLDivElement>(null)
   const modelRef = useRef(chosenModel)
   modelRef.current = chosenModel
+  const widgetContext = useRef(new Map<string, ModelContext>())
   const transport = useMemo(
-    () => new DefaultChatTransport({ api: '/api/chat', body: () => ({ model: modelRef.current || undefined }) }),
+    () => new DefaultChatTransport({ api: '/api/chat', body: () => ({ model: modelRef.current || undefined, context: [...widgetContext.current.values()] }) }),
     [],
   )
   const restored = useMemo(restoreChat, [])
@@ -82,6 +123,12 @@ export function App() {
 
   const addLog = useCallback((entry: WidgetLog) => {
     setLog((current) => [...current.slice(-299), { ...entry, id: ++logId.current, time: new Date().toLocaleTimeString() }])
+  }, [])
+
+  const shareWithModel = useCallback((context: ModelContext) => void widgetContext.current.set(context.callId, context), [])
+
+  const trackDisplayMode = useCallback((callId: string, mode: DisplayMode) => {
+    setFullscreenCall((current) => (mode === 'fullscreen' ? callId : current === callId ? null : current))
   }, [])
 
   const followUp = useCallback((text: string) => void sendMessage({ text }), [sendMessage])
@@ -131,9 +178,38 @@ export function App() {
             title={state.connected ? 'Connected' : 'Disconnected'}
           />
           <span className="shrink-0 text-[13px] font-medium text-ink">{state.serverInfo?.name ?? 'Not connected'}</span>
-          <span className="min-w-0 truncate font-mono text-[11.5px] text-ink-3">{state.serverUrl}</span>
+          <ServerUrl
+            url={state.serverUrl}
+            onChange={(url) => {
+              setNotice('')
+              connectServer(url).then(
+                () => {
+                  widgetContext.current.clear()
+                  setLog([])
+                  setMessages([])
+                },
+                (problem) => setNotice(problem instanceof Error ? problem.message : String(problem)),
+              )
+            }}
+          />
           <div className="ml-auto flex shrink-0 items-center">
-            <IconButton label="Start a new chat" onClick={() => setMessages([])}>
+            <ExamplesMenu
+              examples={state.examples}
+              onStart={(id) => {
+                widgetContext.current.clear()
+                setLog([])
+                setNotice('')
+                setMessages([])
+                void startExample(id)
+              }}
+            />
+            <IconButton
+              label="Start a new chat"
+              onClick={() => {
+                widgetContext.current.clear()
+                setMessages([])
+              }}
+            >
               <Glyph name="compose" />
             </IconButton>
             <IconButton label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
@@ -154,13 +230,16 @@ export function App() {
               state={state}
               theme={theme}
               onFollowUp={followUp}
+              onModelContext={shareWithModel}
+              onDisplayMode={trackDisplayMode}
               onLog={addLog}
               onRunTool={(tool, args) => void runTool(tool, args).catch((problem) => setNotice(String(problem)))}
+              onPrompt={followUp}
             />
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[720px] px-5 pb-4">
+        <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
           {notice && (
             <p role="alert" className="mb-2 text-[12.5px] text-red">
               {notice}
@@ -169,7 +248,7 @@ export function App() {
           <PromptBar
             key={state.models.map((option) => option.key).join()}
             demo={false}
-            placeholder="Ask the app, or type / to run a tool"
+            placeholder={fullscreenCall ? `Ask ${state.serverInfo?.name ?? 'the app'}` : 'Ask the app, or type / to run a tool'}
             sources={[]}
             commands={commands}
             models={state.models}

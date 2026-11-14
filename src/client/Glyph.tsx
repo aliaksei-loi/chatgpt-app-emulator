@@ -32,6 +32,7 @@ const paths = {
     </g>
   ),
   chevron: <path d="M6 9l6 6 6-6" />,
+  spark: <path d="M12 1.5l2.6 7.9 7.9 2.6-7.9 2.6-2.6 7.9-2.6-7.9-7.9-2.6 7.9-2.6z" fill="currentColor" stroke="none" />,
   panel: (
     <g>
       <rect x="3" y="4" width="18" height="16" rx="2" />
