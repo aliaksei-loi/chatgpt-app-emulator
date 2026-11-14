@@ -67,3 +67,7 @@ Model behaviour is an approximation: same tool metadata, different system prompt
 ## Security
 
 The local API accepts requests only from the emulator page (Host and Origin checks, JSON bodies) and listens on `127.0.0.1`. Widgets can open only `http` and `https` links.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The files in `src/client/beautifui` come from Beautiful UI and keep their own MIT license in that folder.

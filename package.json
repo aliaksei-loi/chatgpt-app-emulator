@@ -2,6 +2,7 @@
   "name": "chatgpt-app-emulator",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Local emulator of the ChatGPT host for MCP apps with UI",
   "scripts": {
