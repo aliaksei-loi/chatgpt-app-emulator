@@ -33,6 +33,9 @@ function segmentsOf(message: UIMessage) {
 const invocationText = (tool: AppTool | undefined, done: boolean) =>
   String(tool?.meta[`openai/toolInvocation/${done ? 'invoked' : 'invoking'}`] ?? (done ? 'Called' : 'Calling…'))
 
+const hasFailed = (call: DynamicToolUIPart) =>
+  call.state === 'output-error' || (call.state === 'output-available' && (call.output as ToolResult | undefined)?.isError === true)
+
 function toStep(call: DynamicToolUIPart, tool: AppTool | undefined): ToolStep {
   const done = call.state === 'output-available'
   const result = done ? (call.output as ToolResult) : undefined
@@ -42,7 +45,7 @@ function toStep(call: DynamicToolUIPart, tool: AppTool | undefined): ToolStep {
   return {
     id: call.toolCallId,
     icon: tool?.annotations?.readOnlyHint ? 'read' : 'run',
-    label: call.state === 'output-error' ? 'Failed' : invocationText(tool, done),
+    label: hasFailed(call) ? 'Failed' : invocationText(tool, done),
     chip: `${call.toolName} ${JSON.stringify(call.input ?? {})}`,
     mono: true,
     detailMono: true,
@@ -71,7 +74,7 @@ function ToolRun({ calls, state, theme, onFollowUp, onModelContext, onDisplayMod
       />
       {calls.map((call) => {
         const tool = toolOf(call)
-        if (!tool?.resourceUri || call.state === 'output-error') return null
+        if (!tool?.resourceUri || hasFailed(call)) return null
         const done = call.state === 'output-available'
         const mountsBeforeResult = state.widgets[tool.resourceUri]?.mimeType === MCP_APP_MIME
         if (!done && !mountsBeforeResult) return null

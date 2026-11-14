@@ -247,7 +247,7 @@ export function WidgetFrame(props: Props) {
     pip: '',
   }[mode]
   const frameHeight = {
-    inline: Math.min(Math.max(height, 60), MAX_INLINE_HEIGHT),
+    inline: Math.max(height, 60),
     fullscreen: '100%',
     pip: Math.min(Math.max(height, 200), MAX_PIP_HEIGHT),
   }[mode]

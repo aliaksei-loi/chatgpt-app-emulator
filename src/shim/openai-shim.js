@@ -4,7 +4,10 @@
   let sequence = 0
 
   const post = (message) => window.parent.postMessage({ emu: 'openai', ...message }, '*')
-  const notify = (method, params) => post({ method, params })
+  const notify = (method, params) => {
+    post({ method, params })
+    return Promise.resolve()
+  }
   const request = (method, params) =>
     new Promise((resolve, reject) => {
       const id = ++sequence
@@ -24,7 +27,7 @@
     requestModal: (params) => request('requestModal', params),
     setWidgetState: (state) => {
       api.widgetState = state
-      notify('setWidgetState', { state })
+      return notify('setWidgetState', { state })
     },
     openExternal: (params) => notify('openExternal', params),
     setOpenInAppUrl: (params) => notify('setOpenInAppUrl', params),

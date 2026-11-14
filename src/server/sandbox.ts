@@ -5,7 +5,7 @@ import { getCall, getWidgetState, readWidget } from './mcp.js'
 
 const shim = readFileSync(new URL('../shim/openai-shim.js', import.meta.url), 'utf8')
 
-type DeclaredCsp = { connect: string[]; resource: string[]; frame: string[] }
+type DeclaredCsp = { connect: string[]; resource: string[]; frame: string[]; baseUri: string[] }
 
 function declaredCsp(meta: Record<string, unknown>): DeclaredCsp | undefined {
   const standard = (meta.ui as { csp?: Record<string, string[]> } | undefined)?.csp
@@ -15,6 +15,7 @@ function declaredCsp(meta: Record<string, unknown>): DeclaredCsp | undefined {
     connect: standard?.connectDomains ?? legacy?.connect_domains ?? [],
     resource: standard?.resourceDomains ?? legacy?.resource_domains ?? [],
     frame: standard?.frameDomains ?? legacy?.frame_domains ?? [],
+    baseUri: standard?.baseUriDomains ?? legacy?.base_uri_domains ?? [],
   }
 }
 
@@ -26,6 +27,7 @@ function cspHeader(declared: DeclaredCsp | undefined) {
   const connect = declared.connect.filter((origin) => !isWildcard(origin)).join(' ')
   const resource = declared.resource.filter((origin) => !isWildcard(origin)).join(' ')
   const frame = declared.frame.filter((origin) => !isWildcard(origin))
+  const baseUri = declared.baseUri.filter((origin) => !isWildcard(origin)).join(' ')
   return [
     "default-src 'none'",
     `script-src 'self' 'unsafe-inline' blob: ${resource}`,
@@ -36,7 +38,7 @@ function cspHeader(declared: DeclaredCsp | undefined) {
     `connect-src 'self' ${connect}`,
     `frame-src ${frame.length ? frame.join(' ') : "'none'"}`,
     "object-src 'none'",
-    "base-uri 'self'",
+    `base-uri 'self' ${baseUri}`,
     `frame-ancestors ${config.uiOrigin}`,
   ].join('; ')
 }
@@ -66,7 +68,7 @@ sandbox.get('/', async (c) => {
   const displayMode = c.req.query('displayMode') ?? 'inline'
   const boot = {
     callId: record.id,
-    droppedCspOrigins: declared ? [...declared.connect, ...declared.resource, ...declared.frame].filter(isWildcard) : [],
+    droppedCspOrigins: declared ? [...declared.connect, ...declared.resource, ...declared.frame, ...declared.baseUri].filter(isWildcard) : [],
     globals: {
       toolInput: record.input ?? {},
       toolOutput: record.result?.structuredContent ?? null,

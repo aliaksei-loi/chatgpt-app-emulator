@@ -5,9 +5,17 @@ import { modelFor } from './model.js'
 
 type WidgetContext = { toolName: string; text: string }
 
+function currentDate() {
+  const now = new Date()
+  const weekday = now.toLocaleDateString('en-US', { weekday: 'long' })
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return `Current date: ${now.toLocaleDateString('sv-SE')} (${weekday}). User time zone: ${timeZone}.`
+}
+
 function systemPrompt(appName: string, instructions: string | undefined, context: WidgetContext[]) {
   return [
     'You are ChatGPT, a large language model trained by OpenAI.',
+    currentDate(),
     `The user has connected the app "${appName}". Use its tools when they help answer the request.`,
     'Some tools render an interactive widget that the user sees directly. After such a tool call, do not repeat the widget content, add only a short remark.',
     instructions ? `Instructions from the app:\n${instructions}` : '',

@@ -228,6 +228,8 @@ export function useServer(url: string) {
   lastGood = undefined
   failures = 0
   knownTools = []
+  calls.clear()
+  widgetStates.clear()
 }
 
 async function findTool(name: string) {
@@ -245,6 +247,7 @@ export async function runTool(name: string, input: unknown, id: string = randomU
     _meta: {
       'openai/locale': config.locale,
       'openai/userAgent': 'chatgpt-app-emulator',
+      'openai/userLocation': { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
       'openai/subject': 'emulator-user',
       'openai/session': sessionId,
     },
